@@ -6,7 +6,12 @@
 				<input type="range" min="-100" max="100" id="volume">
 			</div>
 		</fieldset>
-		<canvas id="visualizer" height="200"></canvas>
+		<div>
+			<canvas ref="visualizer" id="visualizer" height="200"></canvas>
+		</div>
+		<div>
+			<canvas ref="visualizerColumns" id="visualizer-columns" width="644" height="200"></canvas>
+		</div>
 	</div>
 </template>
 
@@ -14,6 +19,7 @@
 	import {Component, Vue} from 'vue-property-decorator';
 	import HelloWorld from './components/HelloWorld.vue';
 	import EgoAudio from './ego-audio';
+	import EgoAudioVisualization from "@/ego-audio-visualization";
 
 	@Component({
 		components: {
@@ -30,19 +36,23 @@
 		}
 
 		public mounted() {
-			this.egoAudio.loadUrl('/assets/music.mp3')
+			this.egoAudio.loadUrl('/assets/music-3.mp3')
 				.then((audioBuffer) => {
 					this.egoAudio.buffer = audioBuffer;
 
-					this.egoAudio.play();
+					//this.egoAudio.play();
 
-					setTimeout(() => {
-						this.egoAudio.stop();
-					}, 2000);
+					//  Curve
+					const egoAudioVisualizationCurve = new EgoAudioVisualization();
+					egoAudioVisualizationCurve.canvas = this.$refs.visualizer as HTMLCanvasElement;
+					egoAudioVisualizationCurve.audioBuffer = audioBuffer;
+					egoAudioVisualizationCurve.drawCurve();
 
-					setTimeout(() => {
-						this.egoAudio.continue();
-					}, 4000);
+					//  Columns
+					const egoAudioVisualizationColumns = new EgoAudioVisualization();
+					egoAudioVisualizationColumns.canvas = this.$refs.visualizerColumns as HTMLCanvasElement;
+					egoAudioVisualizationColumns.audioBuffer = audioBuffer;
+					egoAudioVisualizationColumns.drawColumns();
 				});
 		}
 
