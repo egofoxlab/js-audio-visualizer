@@ -13,9 +13,14 @@ export default class EgoAudio {
 	public gainNode: GainNode;
 
 	/**
-	 * Last play point when was stopped or zero if not payed yet
+	 * Start play point when audio start plying use AudioContext.currentTime
 	 */
-	public lastPlayPoint: number = 0;
+	public pausedAt: number = 0;
+
+	/**
+	 * Last play point when was stopped or zero if not payed yet use AudioContext.currentTime
+	 */
+	public startPlayPoint: number = -1;
 
 	constructor() {
 		//	Check audio context browser supporting
@@ -37,7 +42,11 @@ export default class EgoAudio {
 	public play(when?: number, offset?: number, duration?: number): void {
 		//	Check empty buffer
 		if (!this.buffer) {
-			throw new Error('Audio buffer is empty.');
+			console.warn('Audio buffer is empty.');
+		}
+
+		if (!offset) {
+			offset = this.pausedAt;
 		}
 
 		//	Set buffer source
@@ -50,13 +59,9 @@ export default class EgoAudio {
 		this.bufferSource.buffer = this.buffer;
 
 		this.bufferSource.start(when, offset, duration);
-	}
 
-	/**
-	 * Continue play audio. Alias of EgoAudio.play() but with less parameters.
-	 */
-	public continue(): void {
-		this.play(0, this.lastPlayPoint);
+		this.startPlayPoint = this.context.currentTime - offset;
+		this.pausedAt = 0;
 	}
 
 	/**
@@ -70,9 +75,29 @@ export default class EgoAudio {
 		}
 
 		//	Save last play point
-		this.lastPlayPoint = when;
+		this.pausedAt = 0;
+		this.startPlayPoint = -1;
 
 		this.bufferSource.stop(when);
+	}
+
+	/**
+	 * Pause track
+	 */
+	public pause(): void {
+		const offset = this.context.currentTime - this.startPlayPoint;
+
+		this.stop();
+
+		this.pausedAt = offset;
+	}
+
+	public playTime(): number {
+		if (this.startPlayPoint === -1) {
+			return this.pausedAt;
+		} else {
+			return this.context.currentTime - this.startPlayPoint;
+		}
 	}
 
 	/**
