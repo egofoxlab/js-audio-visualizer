@@ -19,11 +19,13 @@
 				</div>
 			</div>
 			<div
+					ref="progressControl"
 					class="progress-control"
 					@click="changePlayTime($event)"
 			>
 				<div class="bg"></div>
 				<div
+						ref="progress"
 						class="progress"
 						v-bind:style="{width: progressRate + '%'}"
 				></div>
@@ -73,12 +75,15 @@
 		public progressRate = 0;
 
 		//  Current play time
-		public playTime = '0:00';
+		public playTime = "0:00";
 
 		//  Interval source
 		private intervalSource: number;
 
 		private egoAudio = new EgoAudio();
+
+		//  Time on progress bar that must be play and reset after it
+		private toPlayInTime: number|undefined;
 
 		constructor() {
 			super();
@@ -87,9 +92,20 @@
 		public mounted() {
 			this.initInfoTime();
 
-			this.egoAudio.loadUrl("/assets/music-3.mp3")
+			this.egoAudio.loadUrl("/assets/music-2.mp3")
 				.then((audioBuffer) => {
 					this.egoAudio.buffer = audioBuffer;
+
+					//  Set event listeners
+					this.egoAudio.onPlay = () => {
+						this.animateProgressBar();
+					};
+
+					this.egoAudio.onStop = () => {
+						this.animateProgressBar();
+
+						//this.isPlay = false;
+					};
 
 					//this.egoAudio.play();
 
@@ -113,12 +129,19 @@
 					return;
 				}
 
+				//  Generate human play time for control
 				const playTime = this.egoAudio.playTime();
-				this.playTime = Math.floor(playTime / 60) + ':';
-				let seconds = '0' + Math.floor(playTime % 60);
-
+				this.playTime = Math.floor(playTime / 60) + ":";
+				let seconds = "0" + Math.floor(playTime % 60);
 				this.playTime = this.playTime + seconds.substr(seconds.length - 2);
-			}, 1000);
+
+				//  Stop play audio if it finished
+				if (this.egoAudio.playTime() >= this.egoAudio.totalPlayTime) {
+					this.isPlay = false;
+					//this.egoAudio.stop();
+					this.egoAudio.pause();
+				}
+			}, 100);
 		}
 
 		/**
@@ -128,19 +151,63 @@
 			this.isPlay = !this.isPlay;
 
 			if (this.isPlay) {
-				this.egoAudio.play();
+				if (this.egoAudio.playTime() >= this.egoAudio.totalPlayTime) {
+					this.egoAudio.play(0, 0);
+				} else {
+					this.egoAudio.play(0, this.toPlayInTime);
+				}
+
+				this.toPlayInTime = undefined;
 			} else {
 				this.egoAudio.pause();
 			}
 		}
 
 		changePlayTime(e: MouseEvent): void {
-			const target = (e.target as HTMLElement);
+			const target = (this.$refs.progressControl as HTMLElement);
 			const rect = target.getBoundingClientRect();
 			const posX = e.pageX - rect.left;
-			this.progressRate = Math.round(posX / rect.width * 100);
+			this.progressRate = posX / rect.width * 100;
+			this.progressRate = Math.floor(this.progressRate) + (Math.round(this.progressRate % 1 * 100) / 100);
 
-			console.log(this.progressRate);
+			this.toPlayInTime = this.egoAudio.totalPlayTime * this.progressRate / 100;
+
+			//  Change play time if audio track is play now
+			if (this.egoAudio.isPlay()) {
+				this.egoAudio.stop();
+				this.egoAudio.play(0, this.toPlayInTime);
+
+				//  Reset planning play time
+				this.toPlayInTime = undefined;
+			}
+		}
+
+		animateProgressBar(): void {
+			const eProgress = this.$refs.progress as HTMLElement;
+
+			//  Start animate
+			if (this.egoAudio.isPlay()) {
+				window.requestAnimationFrame(() => {
+					eProgress.style.transition = "";
+					eProgress.style.width = `${this.egoAudio.playTime() / this.egoAudio.totalPlayTime * 100}%`;
+
+					window.requestAnimationFrame(() => {
+						eProgress.style.transition = `width ${this.egoAudio.totalPlayTime - this.egoAudio.playTime()}s linear`;
+
+						window.requestAnimationFrame(() => {
+							eProgress.style.width = "100%";
+						});
+					});
+				});
+
+				return;
+			}
+
+			//  Stop animate
+			window.requestAnimationFrame(() => {
+				eProgress.style.transition = "";
+				eProgress.style.width = `${this.egoAudio.playTime() / this.egoAudio.totalPlayTime * 100}%`;
+			});
 		}
 
 	}

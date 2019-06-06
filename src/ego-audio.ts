@@ -3,11 +3,23 @@ export default class EgoAudio {
 	//	Audio context
 	public context: AudioContext;
 
-	//	Audio buffer
-	public buffer: AudioBuffer;
+	//	Audio buffer getter/setter
+	public get buffer(): AudioBuffer {
+		return this._buffer;
+	}
+
+	public set buffer(buffer: AudioBuffer) {
+		this._buffer = buffer;
+
+		//	Calculate total play time
+		this.calcTotalPlayTime();
+	}
 
 	//	Buffer source
 	public bufferSource: AudioBufferSourceNode;
+
+	//	Total play time of the audio track
+	public totalPlayTime: number;
 
 	//	Gain node
 	public gainNode: GainNode;
@@ -21,6 +33,18 @@ export default class EgoAudio {
 	 * Last play point when was stopped or zero if not payed yet use AudioContext.currentTime
 	 */
 	public startPlayPoint: number = -1;
+
+	//	Event on start play
+	public onPlay: () => void;
+
+	//	Event on stop play
+	public onStop: () => void;
+
+	//	Is audio play now
+	private isPlayNow = false;
+
+	//	Audio buffer
+	private _buffer: AudioBuffer;
 
 	constructor() {
 		//	Check audio context browser supporting
@@ -45,7 +69,7 @@ export default class EgoAudio {
 			console.warn('Audio buffer is empty.');
 		}
 
-		if (!offset) {
+		if (offset === undefined) {
 			offset = this.pausedAt;
 		}
 
@@ -62,6 +86,12 @@ export default class EgoAudio {
 
 		this.startPlayPoint = this.context.currentTime - offset;
 		this.pausedAt = 0;
+		this.isPlayNow = true;
+
+		//	Call event
+		if (this.onPlay) {
+			this.onPlay();
+		}
 	}
 
 	/**
@@ -74,30 +104,65 @@ export default class EgoAudio {
 			when = this.context.currentTime;
 		}
 
-		//	Save last play point
+		//	Update play points
 		this.pausedAt = 0;
 		this.startPlayPoint = -1;
 
 		this.bufferSource.stop(when);
+
+		this.isPlayNow = false;
+
+		//	Call event
+		if (this.onStop) {
+			this.onStop();
+		}
 	}
 
 	/**
 	 * Pause track
 	 */
 	public pause(): void {
-		const offset = this.context.currentTime - this.startPlayPoint;
+		if (this.startPlayPoint === -1) {
+			return;
+		}
+
+		let offset = this.context.currentTime - this.startPlayPoint;
+
+		if (offset > this.totalPlayTime) {
+			offset = this.totalPlayTime;
+		}
 
 		this.stop();
 
 		this.pausedAt = offset;
 	}
 
+	/**
+	 * Return track current play time in seconds
+	 */
 	public playTime(): number {
 		if (this.startPlayPoint === -1) {
+			if (this.pausedAt > this.totalPlayTime) {
+				return this.totalPlayTime;
+			}
+
 			return this.pausedAt;
 		} else {
-			return this.context.currentTime - this.startPlayPoint;
+			const playTime = this.context.currentTime - this.startPlayPoint;
+
+			if (playTime >= this.totalPlayTime) {
+				return this.totalPlayTime;
+			}
+
+			return playTime;
 		}
+	}
+
+	/**
+	 * Return is audio track play now
+	 */
+	public isPlay(): boolean {
+		return this.isPlayNow;
 	}
 
 	/**
@@ -130,6 +195,17 @@ export default class EgoAudio {
 				});
 			};
 		});
+	}
+
+	/**
+	 * Calculate total audio play time and save it to `totalPlayTime` property
+	 */
+	private calcTotalPlayTime(): void {
+		if (!this.buffer) {
+			return;
+		}
+
+		this.totalPlayTime = this.buffer.length / this.buffer.sampleRate;
 	}
 
 }
