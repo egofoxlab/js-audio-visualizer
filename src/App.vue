@@ -1,55 +1,50 @@
 <template>
 	<div id="app">
-		<div id="play-panel">
-			<div class="play-control">
-				<div
-						class="play"
-						@click="togglePlay()"
+		<div
+				id="greetings"
+				:class="{'hide': !showGreetings}"
+				@click="showGreetings = false"
+		>
+			<span>
+				Click every where for continue...
+			</span>
+		</div>
+
+		<div id="main-content">
+			<!--Upload file-->
+			<div id="upload">
+				<input
+						ref="inputFile"
+						type="file"
+						@change="eventUploadFile($event)"
+						accept="audio/*"
+						class="hide"
 				>
-					<img
-							v-if="isPlay"
-							src="/assets/images/pause-button.png"
-							alt="pause-button"
-					>
-					<img
-							v-else
-							src="/assets/images/play-button.png"
-							alt="play-button"
-					>
-				</div>
-			</div>
-			<div
-					ref="progressControl"
-					class="progress-control"
-					@click="changePlayTime($event)"
-			>
-				<div class="bg"></div>
 				<div
-						ref="progress"
-						class="progress"
-						v-bind:style="{width: progressRate + '%'}"
-				></div>
-			</div>
-			<div class="info">
-				<div class="time">
-					{{playTime}}
+						class="button"
+						@click="eventUpload()"
+				>
+				<span>
+					Upload File
+				</span>
 				</div>
 			</div>
-		</div>
-		<div>
-			<canvas
-					ref="visualizer"
-					id="visualizer"
-					height="200"
-			></canvas>
-		</div>
-		<div>
-			<canvas
-					ref="visualizerColumns"
-					id="visualizer-columns"
-					width="644"
-					height="200"
-			></canvas>
+
+			<!--Player-->
+			<div id="player">
+				<audio
+						ref="player"
+						src="/assets/music-1.mp3"
+						controls
+				></audio>
+			</div>
+
+			<!--Visualizer-->
+			<div id="visualizer">
+				<canvas
+						ref="canvas"
+				></canvas>
+			</div>
 		</div>
 	</div>
 </template>
@@ -57,8 +52,9 @@
 <script lang="ts">
 	import {Component, Vue} from "vue-property-decorator";
 	import HelloWorld from "./components/HelloWorld.vue";
-	import EgoAudio from "./ego-audio";
-	import EgoAudioVisualization from "@/ego-audio-visualization";
+	import EgoAudioVisualizer from "@/ego-audio-visualizer";
+
+	declare const p5: any;
 
 	@Component({
 		components: {
@@ -68,146 +64,92 @@
 	})
 	export default class App extends Vue {
 
-		//  Flag is audio file play now
-		public isPlay = false;
+		//  Show greetings
+		public showGreetings = true;
 
-		//  Progress play rate of audio file in percentage
-		public progressRate = 0;
+		//  Audio player
+		private player: HTMLAudioElement;
 
-		//  Current play time
-		public playTime = "0:00";
+		//  Audio context
+		private audioContext: AudioContext;
 
-		//  Interval source
-		private intervalSource: number;
+		//  Audio source
+		private audioSource: MediaElementAudioSourceNode;
 
-		private egoAudio = new EgoAudio();
-
-		//  Time on progress bar that must be play and reset after it
-		private toPlayInTime: number|undefined;
+		//  Audio visualizer
+		private egoAudioVisualizer: EgoAudioVisualizer;
 
 		constructor() {
 			super();
 		}
 
 		public mounted() {
-			this.initInfoTime();
+			this.player = this.$refs.player as HTMLAudioElement;
 
-			this.egoAudio.loadUrl("/assets/music-2.mp3")
-				.then((audioBuffer) => {
-					this.egoAudio.buffer = audioBuffer;
+			//  Resize canvas on window change
+			this.resizeCanvas();
 
-					//  Set event listeners
-					this.egoAudio.onPlay = () => {
-						this.animateProgressBar();
-					};
+			window.addEventListener('resize', () => {
+				this.resizeCanvas();
+			});
 
-					this.egoAudio.onStop = () => {
-						this.animateProgressBar();
+			//  Bootstrap preparation
+			const bootstrapHandler = () => {
+				document.removeEventListener('click', bootstrapHandler);
 
-						//this.isPlay = false;
-					};
+				this.audioContext = new AudioContext();
 
-					//this.egoAudio.play();
-
-					//  Curve
-					const egoAudioVisualizationCurve = new EgoAudioVisualization();
-					egoAudioVisualizationCurve.canvas = this.$refs.visualizer as HTMLCanvasElement;
-					egoAudioVisualizationCurve.audioBuffer = audioBuffer;
-					//egoAudioVisualizationCurve.drawCurve();
-
-					//  Columns
-					const egoAudioVisualizationColumns = new EgoAudioVisualization();
-					egoAudioVisualizationColumns.canvas = this.$refs.visualizerColumns as HTMLCanvasElement;
-					egoAudioVisualizationColumns.audioBuffer = audioBuffer;
-					//egoAudioVisualizationColumns.drawColumns();
-				});
+				this.visualizer();
+			};
+			document.addEventListener('click', bootstrapHandler);
 		}
 
-		initInfoTime(): void {
-			this.intervalSource = setInterval(() => {
-				if (!this.egoAudio.buffer) {
-					return;
-				}
+		public eventUpload(): void {
+			(this.$refs.inputFile as HTMLInputElement).dispatchEvent(new MouseEvent('click'));
+		}
 
-				//  Generate human play time for control
-				const playTime = this.egoAudio.playTime();
-				this.playTime = Math.floor(playTime / 60) + ":";
-				let seconds = "0" + Math.floor(playTime % 60);
-				this.playTime = this.playTime + seconds.substr(seconds.length - 2);
+		public eventUploadFile(e: any) {
+			this.player.src = URL.createObjectURL(e.target.files[0]);
+			this.player.load();
+			this.player.play();
 
-				//  Stop play audio if it finished
-				if (this.egoAudio.playTime() >= this.egoAudio.totalPlayTime) {
-					this.isPlay = false;
-					//this.egoAudio.stop();
-					this.egoAudio.pause();
-				}
-			}, 100);
+			this.visualizer();
 		}
 
 		/**
-		 * Toggle play track
+		 * Visualize audio
 		 */
-		togglePlay(): void {
-			this.isPlay = !this.isPlay;
-
-			if (this.isPlay) {
-				if (this.egoAudio.playTime() >= this.egoAudio.totalPlayTime) {
-					this.egoAudio.play(0, 0);
-				} else {
-					this.egoAudio.play(0, this.toPlayInTime);
-				}
-
-				this.toPlayInTime = undefined;
-			} else {
-				this.egoAudio.pause();
+		public visualizer(): void {
+			//  Start audio visualizer
+			//  At first destroy old analyzer
+			if (this.egoAudioVisualizer) {
+				this.egoAudioVisualizer.destroy();
 			}
+
+			this.egoAudioVisualizer = new EgoAudioVisualizer();
+
+			if (!this.audioSource) {
+				this.audioSource = this.audioContext.createMediaElementSource(this.player);
+			}
+
+			//  Audio canvas
+			this.egoAudioVisualizer.canvas = this.$refs.canvas as HTMLCanvasElement;
+
+			//  Audio data
+			this.egoAudioVisualizer.audioContext = this.audioContext;
+			this.egoAudioVisualizer.audioSource = this.audioSource;
+			this.egoAudioVisualizer.audioVisualizer = 'colCubic';
+
+			this.egoAudioVisualizer.init();
 		}
 
-		changePlayTime(e: MouseEvent): void {
-			const target = (this.$refs.progressControl as HTMLElement);
-			const rect = target.getBoundingClientRect();
-			const posX = e.pageX - rect.left;
-			this.progressRate = posX / rect.width * 100;
-			this.progressRate = Math.floor(this.progressRate) + (Math.round(this.progressRate % 1 * 100) / 100);
-
-			this.toPlayInTime = this.egoAudio.totalPlayTime * this.progressRate / 100;
-
-			//  Change play time if audio track is play now
-			if (this.egoAudio.isPlay()) {
-				this.egoAudio.stop();
-				this.egoAudio.play(0, this.toPlayInTime);
-
-				//  Reset planning play time
-				this.toPlayInTime = undefined;
-			}
-		}
-
-		animateProgressBar(): void {
-			const eProgress = this.$refs.progress as HTMLElement;
-
-			//  Start animate
-			if (this.egoAudio.isPlay()) {
-				window.requestAnimationFrame(() => {
-					eProgress.style.transition = "";
-					eProgress.style.width = `${this.egoAudio.playTime() / this.egoAudio.totalPlayTime * 100}%`;
-
-					window.requestAnimationFrame(() => {
-						eProgress.style.transition = `width ${this.egoAudio.totalPlayTime - this.egoAudio.playTime()}s linear`;
-
-						window.requestAnimationFrame(() => {
-							eProgress.style.width = "100%";
-						});
-					});
-				});
-
-				return;
-			}
-
-			//  Stop animate
-			window.requestAnimationFrame(() => {
-				eProgress.style.transition = "";
-				eProgress.style.width = `${this.egoAudio.playTime() / this.egoAudio.totalPlayTime * 100}%`;
-			});
+		/**
+		 * Adapt canvas size for window
+		 */
+		private resizeCanvas(): void {
+			const canvas = this.$refs.canvas as HTMLCanvasElement;
+			canvas.width = window.document.body.offsetWidth;
+			canvas.height = window.document.body.offsetHeight - 300;
 		}
 
 	}
@@ -224,80 +166,96 @@
 		}
 	}
 
+	#greetings {
+		position: fixed;
+		display: flex;
+		width: 100%;
+		height: 100%;
+		align-items: center;
+		justify-content: center;
+		background-color: #404254c7;
+		z-index: 999;
+
+		span {
+			font-size: 40px;
+			color: #fff;
+		}
+	}
+
 	#app {
+		display: flex;
+		height: 100vh;
 		font-family: 'Avenir', Helvetica, Arial, sans-serif;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		text-align: center;
 		color: #2c3e50;
-		padding: 15px;
-		margin-top: 60px;
 
-		#play-panel {
+		#main-content {
 			display: flex;
 			width: 100%;
+			flex-direction: column;
+			padding: 15px;
+			padding-bottom: 100px;
+		}
 
-			.play-control {
+		#upload {
+			display: flex;
+			margin-top: 40px;
+			margin-bottom: 15px;
+			justify-content: center;
+
+			.button {
 				display: inline-flex;
-				width: 50px;
-				flex-shrink: 0;
-				align-items: center;
+				width: 250px;
+				height: 100px;
 				justify-content: center;
+				align-items: center;
+				border-radius: 10px;
+				border: 3px dashed #949496;
 				cursor: pointer;
 
-				.play {
-					display: flex;
-					align-items: center;
+				&:hover {
+					box-shadow: 0 0 17px #9494965e;
 
-					img {
-						width: 40px
+					span {
+						color: #c7c7c9;
 					}
 				}
-			}
 
-			.progress-control {
-				position: relative;
-				display: inline-flex;
-				width: 100%;
-				margin: 0 15px;
-				flex-grow: 1;
-				align-items: center;
-				justify-content: center;
-				cursor: pointer;
-
-				> div {
-					position: absolute;
-					top: 0;
-					bottom: 0;
-					left: 0;
-					margin: auto;
-					display: block;
-					width: 100%;
-					height: 3px;
-					border-radius: 3px;
-
-					&.bg {
-						background-color: #f7f7f7;
-					}
-
-					&.progress {
-						background-color: #bfc0c6;
-					}
-				}
-			}
-
-			.info {
-				display: inline-flex;
-				width: 50px;
-				align-items: center;
-				justify-content: center;
-
-				.time {
-					text-align: center;
-					font-size: 16px;
-					color: #f7f7f7;
+				span {
+					color: #949496;
+					font-size: 22px;
 				}
 			}
 		}
+
+		#player {
+			position: fixed;
+			left: 0;
+			bottom: 15px;
+			width: calc(100% - 30px);
+			padding: 0 15px;
+
+			audio {
+				width: 100%;
+			}
+		}
+
+		#visualizer {
+			height: 100%;
+			display: flex;
+			align-items: flex-end;
+			justify-content: flex-end;
+			overflow: hidden;
+
+			canvas {
+				width: 100%;
+			}
+		}
+	}
+
+	.hide {
+		display: none !important;
 	}
 </style>
